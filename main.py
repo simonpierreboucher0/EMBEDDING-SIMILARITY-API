@@ -13,6 +13,19 @@ from dotenv import load_dotenv
 from datetime import datetime
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Dépendances conditionnelles pour les différentes bases de données vectorielles
+try:
+    import chromadb
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+
+try:
+    import lancedb
+    LANCEDB_AVAILABLE = True
+except ImportError:
+    LANCEDB_AVAILABLE = False
+
 # Charger les variables d'environnement depuis un fichier .env
 load_dotenv()
 
@@ -20,7 +33,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Embedding API Gateway", description="API Gateway unifié pour différents modèles d'embeddings et recherche sémantique avec FAISS ou similarité cosinus")
+app = FastAPI(title="Embedding API Gateway", description="API Gateway unifié pour différents modèles d'embeddings et recherche sémantique avec Chroma, LanceDB ou FAISS")
 
 # Configuration CORS
 app.add_middleware(
@@ -35,6 +48,8 @@ app.add_middleware(
 DATA_DIRECTORY = "vector_data"
 os.makedirs(DATA_DIRECTORY, exist_ok=True)
 os.makedirs(f"{DATA_DIRECTORY}/faiss", exist_ok=True)
+os.makedirs(f"{DATA_DIRECTORY}/chroma", exist_ok=True)
+os.makedirs(f"{DATA_DIRECTORY}/lancedb", exist_ok=True)
 os.makedirs(f"{DATA_DIRECTORY}/json", exist_ok=True)
 
 # Enumération des providers disponibles
@@ -46,9 +61,11 @@ class Provider(str, Enum):
     VOYAGE = "voyage"
 
 # Enumération des méthodes de recherche
-class SearchMethod(str, Enum):
+class VectorDBType(str, Enum):
     FAISS = "faiss"
-    COSINE = "cosine"
+    CHROMA = "chroma"
+    LANCEDB = "lancedb"
+    COSINE = "cosine"  # Gardé pour compatibilité
 
 # Modèles disponibles par provider
 MODELS = {
@@ -115,7 +132,7 @@ class SearchRequest(BaseModel):
     index_name: str
     query: str
     top_k: int = 5
-    method: SearchMethod = SearchMethod.FAISS
+    db_type: VectorDBType = VectorDBType.FAISS
 
 class CreateIndexRequest(BaseModel):
     provider: Provider
@@ -124,14 +141,14 @@ class CreateIndexRequest(BaseModel):
     texts: List[str]
     encoding_format: Optional[str] = "float"
     input_type: Optional[str] = "classification"  # Pour Cohere
-    method: SearchMethod = SearchMethod.FAISS
+    db_type: VectorDBType = VectorDBType.FAISS
 
 class UpdateIndexRequest(BaseModel):
     provider: Provider
     model: str
     index_name: str
     texts: List[str]
-    method: SearchMethod = SearchMethod.FAISS
+    db_type: VectorDBType = VectorDBType.FAISS
 
 class EmbeddingResult(BaseModel):
     embeddings: List[List[float]]
@@ -145,7 +162,7 @@ class SearchResult(BaseModel):
     provider: str
     model: str
     query: str
-    method: SearchMethod
+    db_type: VectorDBType
     results: List[Dict[str, Any]]
 
 class IndexInfo(BaseModel):
@@ -156,7 +173,7 @@ class IndexInfo(BaseModel):
     created_at: str
     updated_at: Optional[str] = None
     dimension: int
-    method: SearchMethod
+    db_type: VectorDBType
 
 # Fonctions utilitaires pour les embeddings
 def get_openai_embedding(texts, model, encoding_format, api_key):
@@ -355,7 +372,7 @@ def create_faiss_index(provider, model, index_name, texts, embeddings, **kwargs)
         "model": model,
         "total_chunks": len(texts),
         "embedding_dim": embedding_dim,
-        "method": "faiss",
+        "db_type": "faiss",
         **kwargs,  # Autres paramètres spécifiques au provider
         "chunks": [
             {
@@ -469,6 +486,343 @@ def search_faiss_index(index_name, query_embedding, k=5):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"FAISS Index '{index_name}' not found")
 
+# Fonctions pour ChromaDB
+def create_chroma_index(provider, model, index_name, texts, embeddings, **kwargs):
+    """Créer un index avec ChromaDB"""
+    if not CHROMA_AVAILABLE:
+        raise HTTPException(status_code=400, detail="ChromaDB not installed. Please install with 'pip install chromadb'")
+    
+    try:
+        # Créer un client ChromaDB persistant
+        client = chromadb.PersistentClient(path=f"{DATA_DIRECTORY}/chroma")
+        
+        # Créer une collection
+        collection = client.create_collection(
+            name=index_name,
+            metadata={
+                "provider": provider,
+                "model": model,
+                "created_at": datetime.now().isoformat(),
+                "embedding_dim": len(embeddings[0]) if embeddings and len(embeddings) > 0 else 0,
+                **kwargs
+            }
+        )
+        
+        # Ajouter les documents avec leurs embeddings
+        ids = [str(i) for i in range(len(texts))]
+        
+        collection.add(
+            documents=texts,
+            embeddings=embeddings,
+            ids=ids,
+            metadatas=[{"text": text, "source": f"{provider}/{model}"} for text in texts]
+        )
+        
+        # Métadonnées pour notre API
+        metadata = {
+            "created_at": datetime.now().isoformat(),
+            "provider": provider,
+            "model": model,
+            "total_chunks": len(texts),
+            "embedding_dim": len(embeddings[0]) if embeddings and len(embeddings) > 0 else 0,
+            "db_type": "chroma"
+        }
+        
+        # Sauvegarder les métadonnées dans notre format
+        with open(f"{DATA_DIRECTORY}/chroma/{index_name}_metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        return collection, metadata
+        
+    except Exception as e:
+        logger.error(f"Error creating ChromaDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB error: {str(e)}")
+
+def update_chroma_index(provider, model, index_name, texts, new_embeddings, **kwargs):
+    """Mettre à jour un index ChromaDB existant"""
+    if not CHROMA_AVAILABLE:
+        raise HTTPException(status_code=400, detail="ChromaDB not installed. Please install with 'pip install chromadb'")
+    
+    try:
+        # Créer un client ChromaDB persistant
+        client = chromadb.PersistentClient(path=f"{DATA_DIRECTORY}/chroma")
+        
+        # Vérifier si la collection existe
+        try:
+            collection = client.get_collection(name=index_name)
+        except:
+            # Si la collection n'existe pas, la créer
+            return create_chroma_index(provider, model, index_name, texts, new_embeddings, **kwargs)
+        
+        # Charger les métadonnées existantes
+        try:
+            with open(f"{DATA_DIRECTORY}/chroma/{index_name}_metadata.json", 'r') as f:
+                metadata = json.load(f)
+        except FileNotFoundError:
+            metadata = {
+                "created_at": datetime.now().isoformat(),
+                "provider": provider,
+                "model": model,
+                "total_chunks": 0,
+                "embedding_dim": len(new_embeddings[0]) if new_embeddings and len(new_embeddings) > 0 else 0,
+                "db_type": "chroma"
+            }
+        
+        # Obtenir le nombre actuel de documents
+        current_count = metadata.get("total_chunks", 0)
+        
+        # Générer de nouveaux IDs
+        ids = [str(i + current_count) for i in range(len(texts))]
+        
+        # Ajouter les nouveaux documents
+        collection.add(
+            documents=texts,
+            embeddings=new_embeddings,
+            ids=ids,
+            metadatas=[{"text": text, "source": f"{provider}/{model}"} for text in texts]
+        )
+        
+        # Mettre à jour les métadonnées
+        metadata["total_chunks"] = current_count + len(texts)
+        metadata["updated_at"] = datetime.now().isoformat()
+        
+        # Sauvegarder les métadonnées mises à jour
+        with open(f"{DATA_DIRECTORY}/chroma/{index_name}_metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        return collection, metadata
+        
+    except Exception as e:
+        logger.error(f"Error updating ChromaDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB error: {str(e)}")
+
+def search_chroma_index(index_name, query_embedding, k=5):
+    """Rechercher dans un index ChromaDB"""
+    if not CHROMA_AVAILABLE:
+        raise HTTPException(status_code=400, detail="ChromaDB not installed. Please install with 'pip install chromadb'")
+    
+    try:
+        # Créer un client ChromaDB persistant
+        client = chromadb.PersistentClient(path=f"{DATA_DIRECTORY}/chroma")
+        
+        # Obtenir la collection
+        try:
+            collection = client.get_collection(name=index_name)
+        except:
+            raise HTTPException(status_code=404, detail=f"ChromaDB collection '{index_name}' not found")
+        
+        # Effectuer la recherche par vecteur
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=k
+        )
+        
+        # Formater les résultats
+        formatted_results = []
+        for i, (document, dist, id_val) in enumerate(zip(results["documents"][0], results["distances"][0], results["ids"][0])):
+            formatted_results.append({
+                "chunk_id": id_val,
+                "text": document,
+                "distance": float(dist),
+                "score": 1 - (float(dist) / 2),  # ChromaDB utilise la distance cosinus, convertir en score
+                "rank": i + 1
+            })
+        
+        return formatted_results
+    
+    except Exception as e:
+        logger.error(f"Error searching ChromaDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"ChromaDB error: {str(e)}")
+
+# Fonctions pour LanceDB
+def create_lancedb_index(provider, model, index_name, texts, embeddings, **kwargs):
+    """Créer un index avec LanceDB"""
+    if not LANCEDB_AVAILABLE:
+        raise HTTPException(status_code=400, detail="LanceDB not installed. Please install with 'pip install lancedb'")
+    
+    try:
+        # Créer une connexion à la base de données
+        db = lancedb.connect(f"{DATA_DIRECTORY}/lancedb")
+        
+        # Préparer les données
+        data = []
+        for i, (text, embedding) in enumerate(zip(texts, embeddings)):
+            data.append({
+                "id": i,
+                "text": text,
+                "vector": embedding
+            })
+        
+        # Créer la table
+        table = db.create_table(
+            index_name,
+            data=data,
+            mode="overwrite"
+        )
+        
+        # Métadonnées pour notre API
+        metadata = {
+            "created_at": datetime.now().isoformat(),
+            "provider": provider,
+            "model": model,
+            "total_chunks": len(texts),
+            "embedding_dim": len(embeddings[0]) if embeddings and len(embeddings) > 0 else 0,
+            "db_type": "lancedb"
+        }
+        
+        # Sauvegarder les métadonnées dans notre format
+        with open(f"{DATA_DIRECTORY}/lancedb/{index_name}_metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
+        return table, metadata
+        
+    except Exception as e:
+        logger.error(f"Error creating LanceDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LanceDB error: {str(e)}")
+
+def update_lancedb_index(provider, model, index_name, texts, new_embeddings, **kwargs):
+    """Mettre à jour un index LanceDB existant"""
+    if not LANCEDB_AVAILABLE:
+        raise HTTPException(status_code=400, detail="LanceDB not installed. Please install with 'pip install lancedb'")
+    
+    try:
+        # Créer une connexion à la base de données
+        db = lancedb.connect(f"{DATA_DIRECTORY}/lancedb")
+        
+        # Vérifier si la table existe
+        try:
+            table = db.open_table(index_name)
+            
+            # Charger les métadonnées existantes
+            try:
+                with open(f"{DATA_DIRECTORY}/lancedb/{index_name}_metadata.json", 'r') as f:
+                    metadata = json.load(f)
+            except FileNotFoundError:
+                metadata = {
+                    "created_at": datetime.now().isoformat(),
+                    "provider": provider,
+                    "model": model,
+                    "total_chunks": 0,
+                    "embedding_dim": len(new_embeddings[0]) if new_embeddings and len(new_embeddings) > 0 else 0,
+                    "db_type": "lancedb"
+                }
+            
+            # Obtenir le nombre actuel de documents
+            current_count = metadata.get("total_chunks", 0)
+            
+            # Préparer les nouvelles données
+            data = []
+            for i, (text, embedding) in enumerate(zip(texts, new_embeddings)):
+                data.append({
+                    "id": current_count + i,
+                    "text": text,
+                    "vector": embedding
+                })
+            
+            # Ajouter les nouvelles données
+            table.add(data=data)
+            
+            # Mettre à jour les métadonnées
+            metadata["total_chunks"] = current_count + len(texts)
+            metadata["updated_at"] = datetime.now().isoformat()
+            
+            # Sauvegarder les métadonnées mises à jour
+            with open(f"{DATA_DIRECTORY}/lancedb/{index_name}_metadata.json", 'w') as f:
+                json.dump(metadata, f, indent=2)
+                
+            return table, metadata
+            
+        except:
+            # Si la table n'existe pas, la créer
+            return create_lancedb_index(provider, model, index_name, texts, new_embeddings, **kwargs)
+        
+    except Exception as e:
+        logger.error(f"Error updating LanceDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LanceDB error: {str(e)}")
+
+def search_lancedb_index(index_name, query_embedding, k=5):
+    """Rechercher dans un index LanceDB"""
+    if not LANCEDB_AVAILABLE:
+        raise HTTPException(status_code=400, detail="LanceDB not installed. Please install with 'pip install lancedb'")
+    
+    try:
+        # Créer une connexion à la base de données
+        db = lancedb.connect(f"{DATA_DIRECTORY}/lancedb")
+        
+        # Ouvrir la table
+        try:
+            table = db.open_table(index_name)
+        except:
+            raise HTTPException(status_code=404, detail=f"LanceDB table '{index_name}' not found")
+        
+        # Effectuer la recherche
+        query_results = table.search(query_embedding).limit(k).to_pandas()
+        
+        # Afficher les colonnes disponibles dans les logs pour le débogage
+        logger.info(f"Available columns in LanceDB result: {query_results.columns.tolist()}")
+        
+        # Formater les résultats
+        formatted_results = []
+        for i, row in enumerate(query_results.itertuples()):
+            # Essayer de déterminer les colonnes correctes
+            try:
+                # Si la colonne contenant la distance a différents noms selon les versions
+                distance = None
+                
+                # Essayer différentes colonnes possibles
+                for attr_name in ['_distance', '_score', 'score', 'distance']:
+                    if hasattr(row, attr_name):
+                        distance = float(getattr(row, attr_name))
+                        break
+                
+                # Si aucune colonne de distance n'est trouvée, utiliser l'index comme score
+                if distance is None:
+                    distance = float(i)
+                
+                # Trouver la colonne de texte
+                text = None
+                for attr_name in ['text', 'document', 'content']:
+                    if hasattr(row, attr_name):
+                        text = getattr(row, attr_name)
+                        break
+                
+                if text is None:
+                    text = f"Result {i+1}"
+                
+                # Trouver l'ID
+                id_val = None
+                for attr_name in ['id', 'chunk_id', 'Index']:
+                    if hasattr(row, attr_name):
+                        id_val = getattr(row, attr_name)
+                        break
+                
+                if id_val is None:
+                    id_val = i
+                
+                formatted_results.append({
+                    "chunk_id": str(id_val),
+                    "text": text,
+                    "distance": distance,
+                    "score": 1 / (1 + distance),  # Convertir distance en score de similarité
+                    "rank": i + 1
+                })
+            except Exception as e:
+                # Si une erreur se produit pour une ligne spécifique, utiliser des valeurs par défaut
+                logger.warning(f"Error processing LanceDB result row {i}: {e}")
+                formatted_results.append({
+                    "chunk_id": str(i),
+                    "text": f"Result {i+1}",
+                    "distance": float(i),
+                    "score": 1 / (1 + float(i)),
+                    "rank": i + 1
+                })
+        
+        return formatted_results
+    
+    except Exception as e:
+        logger.error(f"Error searching LanceDB index: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"LanceDB error: {str(e)}")
+
 # Fonctions pour la méthode de similarité cosinus
 def create_cosine_index(provider, model, index_name, texts, embeddings, **kwargs):
     """Créer un index JSON pour la similarité cosinus"""
@@ -482,7 +836,7 @@ def create_cosine_index(provider, model, index_name, texts, embeddings, **kwargs
         "model": model,
         "total_chunks": len(texts),
         "embedding_dim": embedding_dim,
-        "method": "cosine",
+        "db_type": "cosine",
         **kwargs,  # Autres paramètres spécifiques au provider
         "chunks": [
             {
@@ -582,6 +936,29 @@ def search_cosine_index(index_name, query_embedding, k=5):
 def get_models():
     return MODELS
 
+# Endpoint pour liste des bases de données vectorielles supportées
+@app.get("/vector_dbs")
+def get_vector_dbs():
+    supported_dbs = {
+        "faiss": {
+            "available": True,
+            "description": "Facebook AI Similarity Search - Une bibliothèque optimisée pour la recherche de similarité à grande échelle"
+        },
+        "chroma": {
+            "available": CHROMA_AVAILABLE,
+            "description": "Une base de données vectorielle spécialement conçue pour les applications d'IA et les embeddings"
+        },
+        "lancedb": {
+            "available": LANCEDB_AVAILABLE,
+            "description": "Une base de données vectorielle orientée document optimisée pour les workloads vectoriels"
+        },
+        "cosine": {
+            "available": True,
+            "description": "Une méthode simple basée sur la similarité cosinus (sans base de données spécifique)"
+        }
+    }
+    return supported_dbs
+
 # Endpoint pour obtenir des embeddings
 @app.post("/embeddings", response_model=EmbeddingResult)
 def create_embeddings(request: EmbeddingRequest):
@@ -633,6 +1010,18 @@ def create_index(request: CreateIndexRequest):
             detail=f"Model {request.model} not available for provider {request.provider}. Available models: {MODELS.get(request.provider)}"
         )
     
+    # Vérifier la disponibilité de la base de données vectorielle
+    if request.db_type == VectorDBType.CHROMA and not CHROMA_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="ChromaDB not installed. Please install with 'pip install chromadb'"
+        )
+    elif request.db_type == VectorDBType.LANCEDB and not LANCEDB_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="LanceDB not installed. Please install with 'pip install lancedb'"
+        )
+    
     try:
         # Obtenir les embeddings
         result = get_embeddings_by_provider(
@@ -653,7 +1042,7 @@ def create_index(request: CreateIndexRequest):
             extra_params["encoding_format"] = request.encoding_format
         
         # Créer l'index selon la méthode choisie
-        if request.method == SearchMethod.FAISS:
+        if request.db_type == VectorDBType.FAISS:
             _, metadata = create_faiss_index(
                 request.provider, 
                 request.model, 
@@ -662,7 +1051,25 @@ def create_index(request: CreateIndexRequest):
                 embeddings, 
                 **extra_params
             )
-        else:  # SearchMethod.COSINE
+        elif request.db_type == VectorDBType.CHROMA:
+            _, metadata = create_chroma_index(
+                request.provider, 
+                request.model, 
+                request.index_name, 
+                request.texts, 
+                embeddings, 
+                **extra_params
+            )
+        elif request.db_type == VectorDBType.LANCEDB:
+            _, metadata = create_lancedb_index(
+                request.provider, 
+                request.model, 
+                request.index_name, 
+                request.texts, 
+                embeddings, 
+                **extra_params
+            )
+        else:  # VectorDBType.COSINE
             metadata = create_cosine_index(
                 request.provider, 
                 request.model, 
@@ -679,7 +1086,7 @@ def create_index(request: CreateIndexRequest):
             "total_chunks": len(request.texts),
             "created_at": metadata["created_at"],
             "dimension": metadata["embedding_dim"],
-            "method": request.method
+            "db_type": request.db_type
         }
         
     except Exception as e:
@@ -696,6 +1103,18 @@ def update_index(index_name: str, request: UpdateIndexRequest):
             detail=f"Model {request.model} not available for provider {request.provider}. Available models: {MODELS.get(request.provider)}"
         )
     
+    # Vérifier la disponibilité de la base de données vectorielle
+    if request.db_type == VectorDBType.CHROMA and not CHROMA_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="ChromaDB not installed. Please install with 'pip install chromadb'"
+        )
+    elif request.db_type == VectorDBType.LANCEDB and not LANCEDB_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="LanceDB not installed. Please install with 'pip install lancedb'"
+        )
+    
     try:
         # Obtenir les embeddings
         result = get_embeddings_by_provider(
@@ -709,7 +1128,7 @@ def update_index(index_name: str, request: UpdateIndexRequest):
         embeddings = result["embeddings"]
         
         # Mettre à jour l'index selon la méthode choisie
-        if request.method == SearchMethod.FAISS:
+        if request.db_type == VectorDBType.FAISS:
             # Vérifier si l'index existe
             if not os.path.exists(f"{DATA_DIRECTORY}/faiss/{index_name}.faiss"):
                 raise HTTPException(status_code=404, detail=f"FAISS index '{index_name}' not found")
@@ -721,7 +1140,23 @@ def update_index(index_name: str, request: UpdateIndexRequest):
                 request.texts, 
                 embeddings
             )
-        else:  # SearchMethod.COSINE
+        elif request.db_type == VectorDBType.CHROMA:
+            _, metadata = update_chroma_index(
+                request.provider, 
+                request.model, 
+                index_name, 
+                request.texts, 
+                embeddings
+            )
+        elif request.db_type == VectorDBType.LANCEDB:
+            _, metadata = update_lancedb_index(
+                request.provider, 
+                request.model, 
+                index_name, 
+                request.texts, 
+                embeddings
+            )
+        else:  # VectorDBType.COSINE
             # Vérifier si l'index existe
             if not os.path.exists(f"{DATA_DIRECTORY}/json/{index_name}.json"):
                 raise HTTPException(status_code=404, detail=f"Cosine index '{index_name}' not found")
@@ -742,7 +1177,7 @@ def update_index(index_name: str, request: UpdateIndexRequest):
             "created_at": metadata["created_at"],
             "updated_at": metadata.get("updated_at"),
             "dimension": metadata["embedding_dim"],
-            "method": request.method
+            "db_type": request.db_type
         }
         
     except Exception as e:
@@ -761,6 +1196,18 @@ def search(request: SearchRequest):
             detail=f"Model {request.model} not available for provider {request.provider}. Available models: {MODELS.get(request.provider)}"
         )
     
+    # Vérifier la disponibilité de la base de données vectorielle
+    if request.db_type == VectorDBType.CHROMA and not CHROMA_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="ChromaDB not installed. Please install with 'pip install chromadb'"
+        )
+    elif request.db_type == VectorDBType.LANCEDB and not LANCEDB_AVAILABLE:
+        raise HTTPException(
+            status_code=400, 
+            detail="LanceDB not installed. Please install with 'pip install lancedb'"
+        )
+    
     try:
         # Obtenir l'embedding de la requête
         result = get_embeddings_by_provider(
@@ -774,9 +1221,13 @@ def search(request: SearchRequest):
         query_embedding = result["embeddings"][0]
         
         # Effectuer la recherche selon la méthode choisie
-        if request.method == SearchMethod.FAISS:
+        if request.db_type == VectorDBType.FAISS:
             search_results = search_faiss_index(request.index_name, query_embedding, request.top_k)
-        else:  # SearchMethod.COSINE
+        elif request.db_type == VectorDBType.CHROMA:
+            search_results = search_chroma_index(request.index_name, query_embedding, request.top_k)
+        elif request.db_type == VectorDBType.LANCEDB:
+            search_results = search_lancedb_index(request.index_name, query_embedding, request.top_k)
+        else:  # VectorDBType.COSINE
             search_results = search_cosine_index(request.index_name, query_embedding, request.top_k)
         
         return {
@@ -784,7 +1235,7 @@ def search(request: SearchRequest):
             "provider": request.provider,
             "model": request.model,
             "query": request.query,
-            "method": request.method,
+            "db_type": request.db_type,
             "results": search_results
         }
         
@@ -819,7 +1270,55 @@ def list_indexes():
                         "created_at": metadata.get("created_at", ""),
                         "updated_at": metadata.get("updated_at"),
                         "dimension": metadata.get("embedding_dim", 0),
-                        "method": SearchMethod.FAISS
+                        "db_type": VectorDBType.FAISS
+                    }
+                    
+                    indexes.append(index_info)
+        
+        # Parcourir les index ChromaDB
+        if os.path.exists(f"{DATA_DIRECTORY}/chroma"):
+            for filename in os.listdir(f"{DATA_DIRECTORY}/chroma"):
+                if filename.endswith("_metadata.json"):
+                    index_name = filename.replace("_metadata.json", "")
+                    
+                    # Charger les métadonnées
+                    with open(f"{DATA_DIRECTORY}/chroma/{filename}", 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Créer l'objet IndexInfo
+                    index_info = {
+                        "provider": metadata.get("provider", "unknown"),
+                        "model": metadata.get("model", "unknown"),
+                        "index_name": index_name,
+                        "total_chunks": metadata.get("total_chunks", 0),
+                        "created_at": metadata.get("created_at", ""),
+                        "updated_at": metadata.get("updated_at"),
+                        "dimension": metadata.get("embedding_dim", 0),
+                        "db_type": VectorDBType.CHROMA
+                    }
+                    
+                    indexes.append(index_info)
+        
+        # Parcourir les index LanceDB
+        if os.path.exists(f"{DATA_DIRECTORY}/lancedb"):
+            for filename in os.listdir(f"{DATA_DIRECTORY}/lancedb"):
+                if filename.endswith("_metadata.json"):
+                    index_name = filename.replace("_metadata.json", "")
+                    
+                    # Charger les métadonnées
+                    with open(f"{DATA_DIRECTORY}/lancedb/{filename}", 'r') as f:
+                        metadata = json.load(f)
+                    
+                    # Créer l'objet IndexInfo
+                    index_info = {
+                        "provider": metadata.get("provider", "unknown"),
+                        "model": metadata.get("model", "unknown"),
+                        "index_name": index_name,
+                        "total_chunks": metadata.get("total_chunks", 0),
+                        "created_at": metadata.get("created_at", ""),
+                        "updated_at": metadata.get("updated_at"),
+                        "dimension": metadata.get("embedding_dim", 0),
+                        "db_type": VectorDBType.LANCEDB
                     }
                     
                     indexes.append(index_info)
@@ -843,7 +1342,7 @@ def list_indexes():
                         "created_at": metadata.get("created_at", ""),
                         "updated_at": metadata.get("updated_at"),
                         "dimension": metadata.get("embedding_dim", 0),
-                        "method": SearchMethod.COSINE
+                        "db_type": VectorDBType.COSINE
                     }
                     
                     indexes.append(index_info)
@@ -856,10 +1355,10 @@ def list_indexes():
 
 # Endpoint pour supprimer un index
 @app.delete("/index/{index_name}")
-def delete_index(index_name: str, method: SearchMethod = Query(..., description="Méthode d'indexation utilisée")):
+def delete_index(index_name: str, db_type: VectorDBType = Query(..., description="Type de base de données vectorielle utilisée")):
     try:
         # Vérifier si l'index existe selon la méthode
-        if method == SearchMethod.FAISS:
+        if db_type == VectorDBType.FAISS:
             index_path = f"{DATA_DIRECTORY}/faiss/{index_name}.faiss"
             metadata_path = f"{DATA_DIRECTORY}/faiss/{index_name}.json"
             
@@ -871,7 +1370,45 @@ def delete_index(index_name: str, method: SearchMethod = Query(..., description=
             if os.path.exists(metadata_path):
                 os.remove(metadata_path)
                 
-        else:  # SearchMethod.COSINE
+        elif db_type == VectorDBType.CHROMA:
+            if not CHROMA_AVAILABLE:
+                raise HTTPException(status_code=400, detail="ChromaDB not installed")
+                
+            # Vérifier si les métadonnées existent
+            metadata_path = f"{DATA_DIRECTORY}/chroma/{index_name}_metadata.json"
+            if not os.path.exists(metadata_path):
+                raise HTTPException(status_code=404, detail=f"ChromaDB index '{index_name}' not found")
+            
+            # Supprimer la collection
+            client = chromadb.PersistentClient(path=f"{DATA_DIRECTORY}/chroma")
+            try:
+                client.delete_collection(name=index_name)
+            except Exception as e:
+                logger.error(f"Error deleting ChromaDB collection: {str(e)}")
+            
+            # Supprimer les métadonnées
+            os.remove(metadata_path)
+            
+        elif db_type == VectorDBType.LANCEDB:
+            if not LANCEDB_AVAILABLE:
+                raise HTTPException(status_code=400, detail="LanceDB not installed")
+                
+            # Vérifier si les métadonnées existent
+            metadata_path = f"{DATA_DIRECTORY}/lancedb/{index_name}_metadata.json"
+            if not os.path.exists(metadata_path):
+                raise HTTPException(status_code=404, detail=f"LanceDB index '{index_name}' not found")
+            
+            # Supprimer la table
+            db = lancedb.connect(f"{DATA_DIRECTORY}/lancedb")
+            try:
+                db.drop_table(index_name)
+            except Exception as e:
+                logger.error(f"Error deleting LanceDB table: {str(e)}")
+            
+            # Supprimer les métadonnées
+            os.remove(metadata_path)
+            
+        else:  # VectorDBType.COSINE
             index_path = f"{DATA_DIRECTORY}/json/{index_name}.json"
             
             if not os.path.exists(index_path):
@@ -880,7 +1417,7 @@ def delete_index(index_name: str, method: SearchMethod = Query(..., description=
             # Supprimer le fichier
             os.remove(index_path)
         
-        return {"message": f"Index '{index_name}' ({method}) deleted successfully"}
+        return {"message": f"Index '{index_name}' ({db_type}) deleted successfully"}
         
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -890,10 +1427,10 @@ def delete_index(index_name: str, method: SearchMethod = Query(..., description=
 
 # Endpoint pour obtenir les informations d'un index
 @app.get("/index/{index_name}", response_model=IndexInfo)
-def get_index_info(index_name: str, method: SearchMethod = Query(..., description="Méthode d'indexation utilisée")):
+def get_index_info(index_name: str, db_type: VectorDBType = Query(..., description="Type de base de données vectorielle utilisée")):
     try:
         # Charger les métadonnées selon la méthode
-        if method == SearchMethod.FAISS:
+        if db_type == VectorDBType.FAISS:
             metadata_path = f"{DATA_DIRECTORY}/faiss/{index_name}.json"
             
             if not os.path.exists(metadata_path):
@@ -902,7 +1439,25 @@ def get_index_info(index_name: str, method: SearchMethod = Query(..., descriptio
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
                 
-        else:  # SearchMethod.COSINE
+        elif db_type == VectorDBType.CHROMA:
+            metadata_path = f"{DATA_DIRECTORY}/chroma/{index_name}_metadata.json"
+            
+            if not os.path.exists(metadata_path):
+                raise HTTPException(status_code=404, detail=f"ChromaDB index '{index_name}' not found")
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+                
+        elif db_type == VectorDBType.LANCEDB:
+            metadata_path = f"{DATA_DIRECTORY}/lancedb/{index_name}_metadata.json"
+            
+            if not os.path.exists(metadata_path):
+                raise HTTPException(status_code=404, detail=f"LanceDB index '{index_name}' not found")
+            
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+                
+        else:  # VectorDBType.COSINE
             metadata_path = f"{DATA_DIRECTORY}/json/{index_name}.json"
             
             if not os.path.exists(metadata_path):
@@ -920,7 +1475,7 @@ def get_index_info(index_name: str, method: SearchMethod = Query(..., descriptio
             "created_at": metadata.get("created_at", ""),
             "updated_at": metadata.get("updated_at"),
             "dimension": metadata.get("embedding_dim", 0),
-            "method": method
+            "db_type": db_type
         }
         
         return index_info
@@ -979,4 +1534,4 @@ def compare_embeddings(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
