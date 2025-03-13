@@ -8,3 +8,5 @@ requests>=2.31.0
 faiss-cpu>=1.7.4
 typing-extensions>=4.8.0
 python-multipart>=0.0.6
+chromadb>=0.4.18
+lancedb>=0.3.0
