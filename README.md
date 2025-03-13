@@ -1,6 +1,6 @@
 # 🌐 Embedding API Gateway 🚀
 
-## 🔥 Passerelle universelle pour tous vos services d'embeddings et recherche sémantique 🔥
+## 🔥 Passerelle universelle pour tous vos services d'embeddings et recherche sémantique vectorielle 🔥
 
 [![GitHub stars](https://img.shields.io/github/stars/simonpierreboucher0/embedding-api?style=social)](https://github.com/simonpierreboucher0/embedding-api/stargazers)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,9 +12,9 @@
 ## ✨ Caractéristiques principales
 
 🔄 **Interface unifiée** - Une API pour tous les fournisseurs d'embeddings  
-🧩 **Double moteur de recherche** - FAISS ou Similarité Cosinus au choix  
-🔍 **Recherche vectorielle** - Recherche sémantique ultra-rapide avec FAISS  
-📊 **Stockage flexible** - Formats optimisés pour rapidité ou lisibilité  
+🧩 **Triple moteur de recherche vectorielle** - FAISS, ChromaDB ou LanceDB au choix  
+🔍 **Recherche vectorielle avancée** - Recherche sémantique optimisée pour différents cas d'usage  
+📊 **Stockage flexible** - Formats optimisés pour rapidité, lisibilité ou évolutivité  
 ⚡ **Hautes performances** - Optimisations pour grands volumes de données  
 🧠 **Gestion d'index** - Création, mise à jour et suppression simplifiées  
 🔒 **Sécurité intégrée** - Gestion sécurisée des clés API  
@@ -74,6 +74,46 @@ Modèles d'embeddings spécialisés avec capacités avancées.
 
 ---
 
+## 🔄 Bases de données vectorielles supportées
+
+### 🌟 FAISS (Facebook AI Similarity Search)
+Bibliothèque de recherche vectorielle ultra-rapide.
+
+| Points forts | Cas d'utilisation |
+|--------------|-------------------|
+| ⚡ **Ultra performant** | Grands volumes de données, recherche en temps réel |
+| 📏 **Recherche par distance euclidienne** | Précision élevée pour la recherche de similitude |
+| 🚀 **Optimisé pour le calcul distribué** | Applications à l'échelle de production |
+
+### 💠 Chroma
+Base de données vectorielle conçue pour les applications d'IA.
+
+| Points forts | Cas d'utilisation |
+|--------------|-------------------|
+| 🧩 **API intuitive** | Développement rapide d'applications RAG |
+| 🌐 **Flexibilité des métadonnées** | Filtrage complexe, recherche hybride |
+| 📊 **Collections et espaces de noms** | Organisation efficace des données |
+
+### 📊 LanceDB
+Base de données vectorielle orientée document avec persistance.
+
+| Points forts | Cas d'utilisation |
+|--------------|-------------------|
+| 💾 **Persistance intégrée** | Données conservées entre les redémarrages |
+| 📁 **Format Apache Arrow** | Performance et interopérabilité élevées |
+| 🔄 **Mises à jour performantes** | Index évolutifs et modifiables |
+
+### 📐 Similarité Cosinus
+Méthode simple de comparaison vectorielle (incluse pour compatibilité).
+
+| Points forts | Cas d'utilisation |
+|--------------|-------------------|
+| 🔍 **Transparence** | Stockage JSON lisible et facilement inspectable |
+| 🧪 **Simplicité** | Prototypage, petits projets, tests |
+| 🧮 **Précision de base** | Comparaisons directes sans optimisation spéciale |
+
+---
+
 ## 🛠️ Installation facile en 3 étapes
 
 ### 1️⃣ Cloner le dépôt
@@ -105,97 +145,116 @@ VOYAGE_API_KEY=xxxx
 
 ### ▶️ Démarrer le serveur
 ```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8001
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 📋 Obtenir la liste des modèles
+### 📋 Obtenir la liste des modèles et bases de données vectorielles
 ```bash
-curl -X GET http://localhost:8001/models
+curl -X GET http://localhost:8000/models
+curl -X GET http://localhost:8000/vector_dbs
 ```
 
 ### 🧠 Générer des embeddings
 ```bash
-curl -X POST http://localhost:8001/embeddings \
+curl -X POST http://localhost:8000/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openai",
-    "model": "text-embedding-ada-002",
-    "texts": "Voici un exemple de texte pour générer un embedding."
+    "model": "text-embedding-3-small",
+    "texts": "Artificial intelligence is transforming the world."
   }'
 ```
 
-### 🗄️ Créer un index FAISS
+### 🗄️ Créer un index avec FAISS
 ```bash
-curl -X POST http://localhost:8001/index \
+curl -X POST http://localhost:8000/index \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openai",
-    "model": "text-embedding-ada-002",
-    "index_name": "mon_index_articles",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts",
     "texts": [
-      "L'intelligence artificielle révolutionne notre monde.",
-      "Le machine learning permet d'automatiser des tâches complexes.",
-      "La recherche sémantique utilise des vecteurs d'embedding.",
-      "FAISS est une bibliothèque efficace pour la recherche vectorielle.",
-      "Les LLMs utilisent des transformers pour comprendre le contexte."
+      "Artificial intelligence is the simulation of human intelligence processes by machines.",
+      "Machine learning is a subset of AI that enables systems to learn from data.",
+      "Deep learning is based on neural networks with many layers.",
+      "Natural language processing allows machines to understand human language.",
+      "Computer vision enables machines to interpret and make decisions based on visual input."
     ],
-    "method": "faiss"
+    "db_type": "faiss"
   }'
 ```
 
-### 📊 Créer un index avec similarité cosinus
+### 🌟 Créer un index avec ChromaDB
 ```bash
-curl -X POST http://localhost:8001/index \
+curl -X POST http://localhost:8000/index \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openai",
-    "model": "text-embedding-ada-002",
-    "index_name": "mon_index_json",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts_chroma",
     "texts": [
-      "L'intelligence artificielle révolutionne notre monde.",
-      "Le machine learning permet d'automatiser des tâches complexes.",
-      "La recherche sémantique utilise des vecteurs d'embedding.",
-      "FAISS est une bibliothèque efficace pour la recherche vectorielle.",
-      "Les LLMs utilisent des transformers pour comprendre le contexte."
+      "Artificial intelligence is the simulation of human intelligence processes by machines.",
+      "Machine learning is a subset of AI that enables systems to learn from data.",
+      "Deep learning is based on neural networks with many layers.",
+      "Natural language processing allows machines to understand human language.",
+      "Computer vision enables machines to interpret and make decisions based on visual input."
     ],
-    "method": "cosine"
+    "db_type": "chroma"
+  }'
+```
+
+### 📊 Créer un index avec LanceDB
+```bash
+curl -X POST http://localhost:8000/index \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts_lance",
+    "texts": [
+      "Artificial intelligence is the simulation of human intelligence processes by machines.",
+      "Machine learning is a subset of AI that enables systems to learn from data.",
+      "Deep learning is based on neural networks with many layers.",
+      "Natural language processing allows machines to understand human language.",
+      "Computer vision enables machines to interpret and make decisions based on visual input."
+    ],
+    "db_type": "lancedb"
   }'
 ```
 
 ### 🔍 Recherche sémantique
 ```bash
-curl -X POST http://localhost:8001/search \
+curl -X POST http://localhost:8000/search \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openai",
-    "model": "text-embedding-ada-002",
-    "index_name": "mon_index_articles",
-    "query": "Comment fonctionne l'IA?",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts",
+    "query": "How do computers understand text?",
     "top_k": 3,
-    "method": "faiss"
+    "db_type": "faiss"
   }'
 ```
 
 ### 🔄 Mettre à jour un index existant
 ```bash
-curl -X PUT http://localhost:8001/index/mon_index_articles \
+curl -X PUT http://localhost:8000/index/ai_concepts \
   -H "Content-Type: application/json" \
   -d '{
     "provider": "openai",
-    "model": "text-embedding-ada-002",
+    "model": "text-embedding-3-small",
     "texts": [
-      "Les réseaux de neurones sont inspirés du cerveau humain.",
-      "Le deep learning est une sous-catégorie du machine learning.",
-      "Les embeddings permettent de capturer la sémantique du texte."
+      "Reinforcement learning is a training method based on rewarding desired behaviors.",
+      "Transformer models have revolutionized natural language processing tasks."
     ],
-    "method": "faiss"
+    "db_type": "faiss"
   }'
 ```
 
 ### 🧮 Comparer deux textes directement
 ```bash
-curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&texts=L'intelligence%20artificielle%20transforme%20le%20monde&provider=openai&model=text-embedding-ada-002" \
-  -H "accept: application/json"
+curl -X POST "http://localhost:8000/compare" \
+  -d "provider=openai&model=text-embedding-3-small&texts=Artificial%20intelligence%20is%20transforming%20industries.&texts=AI%20is%20changing%20how%20businesses%20operate."
 ```
 
 ---
@@ -208,7 +267,7 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 ```json
 {
   "provider": "openai",              // 🌐 Fournisseur (obligatoire)
-  "model": "text-embedding-ada-002", // 🤖 Modèle spécifique (obligatoire)
+  "model": "text-embedding-3-small", // 🤖 Modèle spécifique (obligatoire)
   "texts": ["Premier texte", "Deuxième texte"], // 📄 Textes (string ou array)
   "encoding_format": "float",        // 📊 Format d'encodage (pour certains providers)
   "input_type": "classification"     // 🏷️ Type d'entrée (pour Cohere)
@@ -222,7 +281,7 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
     [0.0023, -0.0118, 0.0094, ...],  // 📊 Premier vecteur
     [0.0089, -0.0342, 0.0211, ...]   // 📊 Deuxième vecteur
   ],
-  "model": "text-embedding-ada-002", // 🤖 Modèle utilisé
+  "model": "text-embedding-3-small", // 🤖 Modèle utilisé
   "provider": "openai",              // 🌐 Fournisseur utilisé
   "dimension": 1536,                 // 📏 Dimension des vecteurs
   "total_tokens": 14                 // 🔢 Nombre de tokens (si disponible)
@@ -235,14 +294,14 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 ```json
 {
   "provider": "openai",              // 🌐 Fournisseur (obligatoire)
-  "model": "text-embedding-ada-002", // 🤖 Modèle spécifique (obligatoire)
+  "model": "text-embedding-3-small", // 🤖 Modèle spécifique (obligatoire)
   "index_name": "mon_index",         // 📚 Nom de l'index (obligatoire)
   "texts": [                         // 📄 Textes à indexer (obligatoire)
     "Premier document à indexer",
     "Deuxième document à indexer",
     "Troisième document à indexer"
   ],
-  "method": "faiss",                 // 🔍 Méthode d'indexation: "faiss" ou "cosine"
+  "db_type": "faiss",                // 💾 Type de base de données: "faiss", "chroma", "lancedb" ou "cosine"
   "encoding_format": "float",        // 📊 Format d'encodage (optionnel)
   "input_type": "classification"     // 🏷️ Type d'entrée (pour Cohere, optionnel)
 }
@@ -252,12 +311,12 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 ```json
 {
   "provider": "openai",              // 🌐 Fournisseur utilisé
-  "model": "text-embedding-ada-002", // 🤖 Modèle utilisé
+  "model": "text-embedding-3-small", // 🤖 Modèle utilisé
   "index_name": "mon_index",         // 📚 Nom de l'index créé
   "total_chunks": 3,                 // 🧩 Nombre de documents indexés
   "created_at": "2023-08-15T14:23:45.123456", // ⏰ Date de création
   "dimension": 1536,                 // 📏 Dimension des vecteurs
-  "method": "faiss"                  // 🔍 Méthode d'indexation utilisée
+  "db_type": "faiss"                 // 💾 Type de base de données utilisée
 }
 ```
 
@@ -267,11 +326,11 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 ```json
 {
   "provider": "openai",              // 🌐 Fournisseur (obligatoire)
-  "model": "text-embedding-ada-002", // 🤖 Modèle spécifique (obligatoire)
+  "model": "text-embedding-3-small", // 🤖 Modèle spécifique (obligatoire)
   "index_name": "mon_index",         // 📚 Nom de l'index (obligatoire)
   "query": "Ma requête de recherche", // 🔎 Texte de la requête (obligatoire)
   "top_k": 5,                        // 🔝 Nombre de résultats souhaités
-  "method": "faiss"                  // 🔍 Méthode de recherche: "faiss" ou "cosine"
+  "db_type": "faiss"                 // 💾 Type de base de données: "faiss", "chroma", "lancedb" ou "cosine"
 }
 ```
 
@@ -280,15 +339,15 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 {
   "index_name": "mon_index",         // 📚 Nom de l'index utilisé
   "provider": "openai",              // 🌐 Fournisseur utilisé
-  "model": "text-embedding-ada-002", // 🤖 Modèle utilisé
+  "model": "text-embedding-3-small", // 🤖 Modèle utilisé
   "query": "Ma requête de recherche", // 🔎 Texte de la requête
-  "method": "faiss",                 // 🔍 Méthode utilisée
+  "db_type": "faiss",                // 💾 Type de base de données utilisée
   "results": [                       // 📋 Résultats de recherche
     {
       "chunk_id": 2,                 // 🆔 ID du document
       "text": "Deuxième document à indexer", // 📄 Texte du document
-      "distance": 0.125,             // 📏 Distance (FAISS uniquement)
-      "similarity": 0.89,            // 📊 Score de similarité
+      "distance": 0.125,             // 📏 Distance (varie selon la base de données)
+      "score": 0.89,                 // 📊 Score de similarité
       "rank": 1                      // 🏅 Rang dans les résultats
     },
     // ... autres résultats
@@ -298,9 +357,9 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 
 ---
 
-## 🧪 Comparaison des méthodes de recherche
+## 🧪 Comparaison des bases de données vectorielles
 
-### 🚀 FAISS (Fast Library for Approximate Nearest Neighbors)
+### 🚀 FAISS (Facebook AI Similarity Search)
 
 **Avantages:**
 - ⚡ **Ultra rapide** pour les grands ensembles de données
@@ -313,7 +372,35 @@ curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&t
 - ⏱️ La vitesse de recherche est critique
 - 💽 Vous avez des contraintes de mémoire pour de grands index
 
-### 📊 Similarité Cosinus (avec stockage JSON)
+### 💠 ChromaDB
+
+**Avantages:**
+- 🔄 **Intégration native** avec des systèmes RAG
+- 🧠 **Conçu pour l'IA** et optimisé pour les embeddings
+- 🔍 **Recherche hybride** combinant vecteurs et métadonnées
+- 📦 **Collections organisées** pour structurer vos données
+
+**Utilisez ChromaDB quand:**
+- 🤖 Vous développez des applications RAG complexes
+- 📝 Vous avez besoin de filtres et métadonnées élaborés
+- 📚 Vous gérez plusieurs collections liées
+- 🔄 Vous voulez une solution adaptée aux workflows d'IA
+
+### 📊 LanceDB
+
+**Avantages:**
+- 💽 **Persistance native** des données entre redémarrages
+- 📁 **Format Apache Arrow** pour performance optimale
+- 🔄 **Requêtes complexes** sur données vectorielles
+- 🧩 **Orienté document** pour données structurées
+
+**Utilisez LanceDB quand:**
+- 💾 La persistance des données est essentielle
+- 📚 Vous manipulez des documents avec structure complexe
+- 🔄 Vous avez besoin de mises à jour fréquentes de l'index
+- 📈 Vous cherchez un compromis entre performance et fonctionnalités
+
+### 📐 Similarité Cosinus (avec stockage JSON)
 
 **Avantages:**
 - 📋 **Simple et transparent** - stockage en fichiers JSON lisibles
@@ -345,15 +432,15 @@ documents = [
     "La distance cosinus est une mesure courante de similarité entre vecteurs."
 ]
 
-# Créer l'index
+# Créer l'index avec ChromaDB pour une utilisation optimale dans les flux RAG
 requests.post(
-    "http://localhost:8001/index",
+    "http://localhost:8000/index",
     json={
         "provider": "openai",
-        "model": "text-embedding-ada-002",
+        "model": "text-embedding-3-small",
         "index_name": "docs_techniques",
         "texts": documents,
-        "method": "faiss"
+        "db_type": "chroma"
     }
 )
 
@@ -362,14 +449,14 @@ user_query = "Comment fonctionne la recherche vectorielle?"
 
 # 3. Rechercher les documents pertinents
 search_response = requests.post(
-    "http://localhost:8001/search",
+    "http://localhost:8000/search",
     json={
         "provider": "openai",
-        "model": "text-embedding-ada-002",
+        "model": "text-embedding-3-small",
         "index_name": "docs_techniques",
         "query": user_query,
         "top_k": 2,
-        "method": "faiss"
+        "db_type": "chroma"
     }
 )
 
@@ -391,125 +478,109 @@ Réponse basée sur le contexte donné:
 print("Prompt enrichi avec contexte:", prompt)
 ```
 
-### 🧪 Test A/B de différents modèles d'embeddings
+### 🧪 Test A/B de différentes bases de données vectorielles
 
 ```python
 import requests
+import time
 import numpy as np
-from sklearn.metrics import precision_recall_fscore_support
+from tabulate import tabulate
 
-# Liste de modèles à comparer
-models_to_test = [
-    {"provider": "openai", "model": "text-embedding-ada-002"},
-    {"provider": "openai", "model": "text-embedding-3-small"},
-    {"provider": "cohere", "model": "embed-english-v3.0"},
-    {"provider": "mistral", "model": "mistral-embed"}
-]
+# Bases de données vectorielles à comparer
+db_types = ["faiss", "chroma", "lancedb", "cosine"]
 
-# Ensemble de test (requêtes et documents pertinents attendus)
-test_queries = [
-    {
-        "query": "Comment fonctionne l'apprentissage profond?",
-        "relevant_docs": [0, 2, 5]  # Indices des documents pertinents
-    },
-    {
-        "query": "Qu'est-ce que le traitement du langage naturel?",
-        "relevant_docs": [1, 4, 7]
-    }
-    # Ajoutez plus de requêtes...
-]
-
+# Documents de test
 documents = [
-    "Le deep learning est un sous-domaine du machine learning qui utilise des réseaux de neurones.",
-    "Le NLP ou traitement du langage naturel permet aux machines de comprendre le texte.",
-    "Les réseaux de neurones profonds contiennent plusieurs couches cachées.",
-    "Python est un langage de programmation populaire pour l'IA.",
-    "BERT est un modèle de langage pré-entraîné pour le NLP.",
-    "L'apprentissage profond nécessite généralement de grandes quantités de données.",
-    "TensorFlow et PyTorch sont des frameworks populaires pour le deep learning.",
-    "Les modèles de langue comme GPT utilisent le NLP pour générer du texte.",
-    "Les embeddings vectoriels sont essentiels pour la recherche sémantique."
+    "Artificial intelligence is the simulation of human intelligence in machines.",
+    "Machine learning algorithms improve automatically through experience.",
+    "Neural networks are computing systems inspired by biological neural networks.",
+    "Deep learning is part of a broader family of machine learning methods.",
+    "Natural language processing helps computers understand human language.",
+    "Computer vision enables machines to interpret visual information.",
+    "Reinforcement learning is learning what to do to maximize a reward signal.",
+    "Supervised learning uses labeled training data to learn the mapping function.",
+    "Unsupervised learning finds patterns in data without pre-existing labels.",
+    "Transfer learning reuses a pre-trained model on a new problem."
 ]
 
-results = {}
-
-# Tester chaque modèle
-for model_info in models_to_test:
-    provider = model_info["provider"]
-    model = model_info["model"]
-    
-    # Créer un index avec ce modèle
-    index_name = f"test_{provider}_{model.replace('-', '_').replace('/', '_')}"
-    
+# Création des index
+for db_type in db_types:
     requests.post(
-        "http://localhost:8001/index",
+        "http://localhost:8000/index",
         json={
-            "provider": provider,
-            "model": model,
-            "index_name": index_name,
+            "provider": "openai",
+            "model": "text-embedding-3-small",
+            "index_name": f"test_{db_type}",
             "texts": documents,
-            "method": "faiss"
+            "db_type": db_type
         }
     )
+    print(f"Index créé avec {db_type}")
+
+# Requêtes de test
+test_queries = [
+    "How do computers learn from data?",
+    "What is the relationship between AI and neural networks?",
+    "How do machines understand images?",
+    "What are different learning approaches in AI?"
+]
+
+# Variables pour collecter les résultats
+results = {db_type: {"latency": [], "first_result": []} for db_type in db_types}
+
+# Effectuer les tests
+for query in test_queries:
+    print(f"\nTest de la requête: '{query}'")
     
-    # Évaluer sur chaque requête
-    precision_scores = []
-    recall_scores = []
-    f1_scores = []
-    
-    for test_case in test_queries:
-        query = test_case["query"]
-        relevant_docs = test_case["relevant_docs"]
-        
-        # Faire la recherche
-        search_response = requests.post(
-            "http://localhost:8001/search",
+    for db_type in db_types:
+        # Mesurer le temps de réponse
+        start_time = time.time()
+        response = requests.post(
+            "http://localhost:8000/search",
             json={
-                "provider": provider,
-                "model": model,
-                "index_name": index_name,
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "index_name": f"test_{db_type}",
                 "query": query,
-                "top_k": len(documents),
-                "method": "faiss"
+                "top_k": 3,
+                "db_type": db_type
             }
         )
+        latency = time.time() - start_time
         
-        # Récupérer les résultats
-        results_data = search_response.json()["results"]
-        retrieved_indices = [result["chunk_id"] for result in results_data]
+        # Collecter les résultats
+        search_results = response.json()["results"]
+        first_result = search_results[0]["text"] if search_results else "Aucun résultat"
         
-        # Créer un vecteur de pertinence binaire pour l'évaluation
-        y_true = np.zeros(len(documents))
-        y_true[relevant_docs] = 1
+        # Stocker les mesures
+        results[db_type]["latency"].append(latency)
+        results[db_type]["first_result"].append(first_result)
         
-        y_pred = np.zeros(len(documents))
-        y_pred[retrieved_indices[:5]] = 1  # Considérer les 5 premiers comme pertinents
-        
-        # Calculer les métriques
-        precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, average='binary')
-        
-        precision_scores.append(precision)
-        recall_scores.append(recall)
-        f1_scores.append(f1)
-    
-    # Stocker les résultats pour ce modèle
-    results[f"{provider}/{model}"] = {
-        "precision_avg": np.mean(precision_scores),
-        "recall_avg": np.mean(recall_scores),
-        "f1_avg": np.mean(f1_scores)
-    }
-    
-    # Nettoyer l'index après le test
-    requests.delete(f"http://localhost:8001/index/{index_name}?method=faiss")
+        print(f"  {db_type}: {latency:.4f}s - Premier résultat: '{first_result[:50]}...'")
 
-# Afficher les résultats comparatifs
-print("\n=== RÉSULTATS DE LA COMPARAISON DES MODÈLES ===")
-for model_name, metrics in results.items():
-    print(f"📊 {model_name}:")
-    print(f"  Précision: {metrics['precision_avg']:.4f}")
-    print(f"  Rappel: {metrics['recall_avg']:.4f}")
-    print(f"  F1-Score: {metrics['f1_avg']:.4f}")
-    print("---")
+# Analyser les résultats
+performance_data = []
+for db_type in db_types:
+    avg_latency = np.mean(results[db_type]["latency"])
+    performance_data.append([
+        db_type,
+        f"{avg_latency:.4f}s",
+        f"{min(results[db_type]['latency']):.4f}s",
+        f"{max(results[db_type]['latency']):.4f}s"
+    ])
+
+# Afficher les résultats dans un tableau
+print("\n=== RÉSULTATS DE PERFORMANCE ===")
+print(tabulate(
+    performance_data,
+    headers=["Base de données", "Latence moyenne", "Latence min", "Latence max"],
+    tablefmt="grid"
+))
+
+# Nettoyage - supprimer les index de test
+for db_type in db_types:
+    requests.delete(f"http://localhost:8000/index/test_{db_type}?db_type={db_type}")
+    print(f"Index test_{db_type} supprimé")
 ```
 
 ---
@@ -521,24 +592,24 @@ for model_name, metrics in results.items():
 Calculez rapidement la similarité entre deux textes sans créer d'index:
 
 ```bash
-curl -X POST "http://localhost:8001/compare?texts=L'IA%20est%20revolutionnaire&texts=L'intelligence%20artificielle%20transforme%20le%20monde&provider=openai&model=text-embedding-ada-002"
+curl -X POST "http://localhost:8000/compare?texts=Artificial%20intelligence%20is%20revolutionizing%20industries.&texts=AI%20is%20changing%20how%20businesses%20operate.&provider=openai&model=text-embedding-3-small"
 ```
 
 Réponse:
 ```json
 {
-  "text1": "L'IA est revolutionnaire",
-  "text2": "L'intelligence artificielle transforme le monde",
+  "text1": "Artificial intelligence is revolutionizing industries.",
+  "text2": "AI is changing how businesses operate.",
   "similarity": 0.8712,
   "provider": "openai",
-  "model": "text-embedding-ada-002"
+  "model": "text-embedding-3-small"
 }
 ```
 
 ### 📋 Listing des index disponibles
 
 ```bash
-curl -X GET http://localhost:8001/indexes
+curl -X GET http://localhost:8000/indexes
 ```
 
 Réponse:
@@ -546,22 +617,31 @@ Réponse:
 [
   {
     "provider": "openai",
-    "model": "text-embedding-ada-002",
-    "index_name": "mon_index_articles",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts",
     "total_chunks": 8,
     "created_at": "2023-08-15T14:23:45.123456",
     "updated_at": "2023-08-16T09:12:34.567890",
     "dimension": 1536,
-    "method": "faiss"
+    "db_type": "faiss"
+  },
+  {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "index_name": "ai_concepts_chroma",
+    "total_chunks": 5,
+    "created_at": "2023-08-15T15:45:12.345678",
+    "dimension": 1536,
+    "db_type": "chroma"
   },
   {
     "provider": "cohere",
     "model": "embed-english-v3.0",
-    "index_name": "mon_index_json",
+    "index_name": "ai_concepts_lance",
     "total_chunks": 5,
-    "created_at": "2023-08-15T15:45:12.345678",
+    "created_at": "2023-08-15T16:30:22.345678",
     "dimension": 1024,
-    "method": "cosine"
+    "db_type": "lancedb"
   }
 ]
 ```
@@ -569,20 +649,20 @@ Réponse:
 ### 🔎 Obtenir les informations sur un index spécifique
 
 ```bash
-curl -X GET "http://localhost:8001/index/mon_index_articles?method=faiss"
+curl -X GET "http://localhost:8000/index/ai_concepts?db_type=faiss"
 ```
 
 Réponse:
 ```json
 {
   "provider": "openai",
-  "model": "text-embedding-ada-002",
-  "index_name": "mon_index_articles",
+  "model": "text-embedding-3-small",
+  "index_name": "ai_concepts",
   "total_chunks": 8,
   "created_at": "2023-08-15T14:23:45.123456",
   "updated_at": "2023-08-16T09:12:34.567890",
   "dimension": 1536,
-  "method": "faiss"
+  "db_type": "faiss"
 }
 ```
 
@@ -613,10 +693,11 @@ Les contributions sont les bienvenues! Voici comment participer:
 ### 💼 Idées de contributions
 
 - 🧪 Support de nouveaux fournisseurs d'embeddings
+- 💾 Intégration d'autres bases de données vectorielles (PGVector, Qdrant, Weaviate...)
 - 📝 Amélioration de la documentation
 - ✨ Fonctionnalités avancées (clustering, chunking automatique)
 - 🚀 Optimisations de performance
-- 🌐 Support de la persistance dans des bases de données vectorielles
+- 🌐 Support pour la multimodalité (embeddings d'images, audio, etc.)
 
 ---
 
@@ -628,11 +709,14 @@ Ce projet est sous licence [MIT](LICENSE) - voir le fichier LICENSE pour plus de
 
 ## ❓ FAQ
 
-### 🔄 Quelle méthode de recherche choisir?
-FAISS pour grands datasets et performance, Cosinus pour petits datasets et transparence.
+### 🔄 Quelle base de données vectorielle choisir?
+- **FAISS** pour performance pure et grands volumes de données
+- **ChromaDB** pour applications RAG et intégration IA avancée
+- **LanceDB** pour persistance, requêtes complexes et données structurées
+- **Cosine** pour prototypage et petits ensembles de données
 
 ### 🔍 Quelle est la meilleure dimension pour les embeddings?
-En général, plus la dimension est élevée, plus la précision est grande, mais au prix de plus de ressources. 1536 est un bon compromis.
+En général, plus la dimension est élevée, plus la précision est grande, mais au prix de plus de ressources. 1536 est un bon compromis, 3072 pour une précision maximale.
 
 ### 🧩 Comment chunker mes documents avant de les indexer?
 Utilisez une bibliothèque comme LangChain ou LlamaIndex pour découper vos documents avant de les envoyer à l'API.
@@ -642,6 +726,9 @@ Générez les embeddings une seule fois et stockez-les. Utilisez des modèles pl
 
 ### 🔧 Comment puis-je améliorer la précision de ma recherche?
 Expérimentez avec différents modèles, ajustez la taille des chunks, et utilisez des techniques de query expansion.
+
+### 📦 Comment installer les bases de données optionnelles?
+Installez ChromaDB avec `pip install chromadb` et LanceDB avec `pip install lancedb`.
 
 ---
 
